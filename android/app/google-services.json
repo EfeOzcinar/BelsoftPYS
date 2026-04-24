@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "431263146138",
+    "project_id": "belsoft-pys",
+    "storage_bucket": "belsoft-pys.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:431263146138:android:d69fabbfe14393ebbcff23",
+        "android_client_info": {
+          "package_name": "com.pysmobileapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAxhcrg9-TIOvSctCm-6ks8PDZ_OsJqIhw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

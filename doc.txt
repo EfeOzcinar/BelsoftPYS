@@ -1,0 +1,53 @@
+Node.js: 18.x
+Java (JDK): 11
+Android SDK Platform: 33
+Android Build Tools: 33.0.0
+compileSdkVersion: 33
+targetSdkVersion: 33
+minSdkVersion: 25
+NDK: 23.1.7779620
+Gradle wrapper: 7.5.1
+Android Gradle Plugin (AGP): 7.4.2
+Kotlin plugin: 1.6.21
+
+
+
+node versions
+
+react-native: 0.71.14
+react: 18.2.0
+react-native-gesture-handler: 2.5.0
+react-native-pdf: 6.5.0
+react-native-screens: 3.20.0
+react-native-webview: 11.26.1
+react-native-svg: 13.9.0
+
+
+In android/build.gradle you also forced:
+
+androidx.appcompat:appcompat:1.6.1
+androidx.appcompat:appcompat-resources:1.6.1
+androidx.core:core:1.9.0
+androidx.core:core-ktx:1.9.0
+androidx.webkit:webkit:1.6.0
+androidx.annotation:annotation-experimental:1.3.0
+
+
+Short checklist
+Node 18
+Java 11
+SDK 33
+Build Tools 33.0.0
+AGP 7.4.2
+Gradle 7.5.1
+Kotlin 1.6.21
+RN 0.71.14
+pinned native package versions
+no "type": "module"
+
+
+
+Build the App:
+1 - cd Android 
+2 - gradlew assembleDebug  For Debug Apk
+3 - gradlew assembleRelease For relase Apk
