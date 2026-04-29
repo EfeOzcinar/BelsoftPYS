@@ -18,30 +18,6 @@ import {
 } from 'react-native';
 import blsCore from '../../core';
 import { Contact, CreateContactRequest, Case } from '../../core/Services/CallCenterService/interfaces';
-// ─── Geo data (city → county → municipality cascade) ─────────────────────────
-// TODO: Replace with blsCore.api call if you move this to backend later
-
-const GEO_DATA: Record<string, Record<string, string[]>> = {
-  Gaziantep: {
-    Şehitkamil: ['Şehitkamil Belediyesi'],
-    Şahinbey: ['Şahinbey Belediyesi'],
-    Nizip: ['Nizip Belediyesi'],
-    İslahiye: ['İslahiye Belediyesi'],
-  },
-  Adıyaman: {
-    Merkez: ['Adıyaman Belediyesi'],
-    Kahta: ['Kahta Belediyesi'],
-  },
-  Kilis: {
-    Merkez: ['Kilis Belediyesi'],
-    Musabeyli: ['Musabeyli Belediyesi'],
-  },
-  Şanlıurfa: {
-    Eyyübiye: ['Eyyübiye Belediyesi'],
-    Haliliye: ['Haliliye Belediyesi'],
-    Siverek: ['Siverek Belediyesi'],
-  },
-};
 
 // ─── Avatar colors ────────────────────────────────────────────────────────────
 
@@ -181,33 +157,30 @@ interface AddContactModalProps {
 
 function AddContactModal({ visible, onClose, onSave }: AddContactModalProps) {
   const [name, setName] = useState('');
-  const [city, setCity] = useState('');
-  const [county, setCounty] = useState('');
   const [municipality, setMunicipality] = useState('');
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const [cityPickerOpen, setCityPickerOpen] = useState(false);
-  const [countyPickerOpen, setCountyPickerOpen] = useState(false);
-  const [munPickerOpen, setMunPickerOpen] = useState(false);
-
-  const cities = Object.keys(GEO_DATA);
-  const counties = city ? Object.keys(GEO_DATA[city] ?? {}) : [];
-  const municipalities = city && county ? GEO_DATA[city]?.[county] ?? [] : [];
-
   function reset() {
-    setName(''); setCity(''); setCounty('');
-    setMunicipality(''); setPhone(''); setEmail('');
+    setName('');
+    setMunicipality('');
+    setPhone('');
   }
 
   async function handleSave() {
-    if (!name.trim() || !city || !county || !municipality || !phone.trim() || !email.trim()) {
+    if (!name.trim() || !municipality.trim() || !phone.trim()) {
       Alert.alert('Eksik Alan', 'Lütfen tüm alanları doldurun.');
       return;
     }
     setSaving(true);
-    await onSave({ Name: name.trim(), City: city, County: county, Municipality: municipality, Phone: phone.trim(), Email: email.trim() });
+    await onSave({
+      Name: name.trim(),
+      City: '',
+      County: '',
+      Municipality: municipality.trim(),
+      Phone: phone.trim(),
+      Email: '',
+    });
     setSaving(false);
     reset();
     onClose();
@@ -221,26 +194,28 @@ function AddContactModal({ visible, onClose, onSave }: AddContactModalProps) {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Yeni Kişi Ekle</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <TextInput style={styles.input} placeholder="Ad Soyad" placeholderTextColor="#999" value={name} onChangeText={setName} />
-
-              <TouchableOpacity style={styles.pickerButton} onPress={() => setCityPickerOpen(true)}>
-                <Text style={[styles.pickerButtonText, !city && styles.pickerPlaceholder]}>{city || 'İl seçin'}</Text>
-                <Text style={styles.pickerChevron}>▾</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.pickerButton, !city && styles.pickerDisabled]} onPress={() => city && setCountyPickerOpen(true)}>
-                <Text style={[styles.pickerButtonText, !county && styles.pickerPlaceholder]}>{county || 'İlçe seçin'}</Text>
-                <Text style={styles.pickerChevron}>▾</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.pickerButton, !county && styles.pickerDisabled]} onPress={() => county && setMunPickerOpen(true)}>
-                <Text style={[styles.pickerButtonText, !municipality && styles.pickerPlaceholder]}>{municipality || 'Belediye seçin'}</Text>
-                <Text style={styles.pickerChevron}>▾</Text>
-              </TouchableOpacity>
-
-              <TextInput style={styles.input} placeholder="Cep Telefonu" placeholderTextColor="#999" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-              <TextInput style={styles.input} placeholder="E-posta" placeholderTextColor="#999" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-
+              <TextInput
+                style={styles.input}
+                placeholder="Ad Soyad"
+                placeholderTextColor="#999"
+                value={name}
+                onChangeText={setName}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Belediye"
+                placeholderTextColor="#999"
+                value={municipality}
+                onChangeText={setMunicipality}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Cep Telefonu"
+                placeholderTextColor="#999"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+              />
               <View style={styles.addModalActions}>
                 <TouchableOpacity style={styles.cancelButton} onPress={() => { reset(); onClose(); }}>
                   <Text style={styles.cancelButtonText}>İptal</Text>
@@ -255,13 +230,6 @@ function AddContactModal({ visible, onClose, onSave }: AddContactModalProps) {
           </TouchableOpacity>
         </TouchableOpacity>
       </KeyboardAvoidingView>
-
-      <PickerModal visible={cityPickerOpen} title="İl Seçin" options={cities} selected={city} allLabel="İl seçin"
-        onSelect={v => { setCity(v); setCounty(''); setMunicipality(''); }} onClose={() => setCityPickerOpen(false)} />
-      <PickerModal visible={countyPickerOpen} title="İlçe Seçin" options={counties} selected={county} allLabel="İlçe seçin"
-        onSelect={v => { setCounty(v); setMunicipality(''); }} onClose={() => setCountyPickerOpen(false)} />
-      <PickerModal visible={munPickerOpen} title="Belediye Seçin" options={municipalities} selected={municipality} allLabel="Belediye seçin"
-        onSelect={setMunicipality} onClose={() => setMunPickerOpen(false)} />
     </Modal>
   );
 }
@@ -281,11 +249,8 @@ function ContactCard({ contact, expanded, cases, onToggle, onNewCase }: ContactC
   const openCases = cases.filter(c => c.Status !== 'resolved');
 
   function handleCall() {
-    Linking.openURL('tel:' + contact.Phone.replace(/\s/g, '')).catch(() =>      Alert.alert('Hata', 'Telefon uygulaması açılamadı.'));
-  }
-
-  function handleEmail() {
-    Linking.openURL('mailto:' + contact.Email).catch(() =>      Alert.alert('Hata', 'E-posta uygulaması açılamadı.'));
+    Linking.openURL('tel:' + contact.Phone.replace(/\s/g, '')).catch(() =>
+      Alert.alert('Hata', 'Telefon uygulaması açılamadı.'));
   }
 
   return (
@@ -299,14 +264,11 @@ function ContactCard({ contact, expanded, cases, onToggle, onNewCase }: ContactC
         </View>
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{contact.Name}</Text>
-          <Text style={styles.cardSub} numberOfLines={1}>{contact.Municipality} · {contact.City}</Text>
+          <Text style={styles.cardSub} numberOfLines={1}>{contact.Municipality}</Text>
         </View>
         <View style={styles.cardActions}>
           <TouchableOpacity style={styles.actionBtn} onPress={handleCall}>
             <Text style={styles.actionIconPhone}>✆</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBlue]} onPress={handleEmail}>
-            <Text style={styles.actionIconEmail}>✉</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -314,16 +276,12 @@ function ContactCard({ contact, expanded, cases, onToggle, onNewCase }: ContactC
       {expanded && (
         <View style={styles.cardDetail}>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>İlçe</Text>
-            <Text style={styles.detailValue}>{contact.County}</Text>
+            <Text style={styles.detailLabel}>Belediye</Text>
+            <Text style={styles.detailValue}>{contact.Municipality}</Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Telefon</Text>
             <Text style={[styles.detailValue, styles.detailBold]}>{contact.Phone}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>E-posta</Text>
-            <Text style={[styles.detailValue, styles.detailLink]} numberOfLines={1}>{contact.Email}</Text>
           </View>
           {openCases.length > 0 && (
             <View style={styles.detailRow}>
@@ -349,17 +307,16 @@ export default function CallCenter() {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [selectedCity, setSelectedCity] = useState('');
-  const [selectedCounty, setSelectedCounty] = useState('');
+  const [selectedMun, setSelectedMun] = useState('');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [newCaseContact, setNewCaseContact] = useState<Contact | null>(null);
+  const [munPickerOpen, setMunPickerOpen] = useState(false);
 
-  const [cityPickerOpen, setCityPickerOpen] = useState(false);
-  const [countyPickerOpen, setCountyPickerOpen] = useState(false);
-
-  const cities = Object.keys(GEO_DATA);
-  const counties = selectedCity ? Object.keys(GEO_DATA[selectedCity] ?? {}) : [];
+  const municipalities = useMemo(() =>
+    [...new Set(contacts.map(c => c.Municipality))].sort(),
+    [contacts]
+  );
 
   useEffect(() => {
     loadContacts();
@@ -418,11 +375,10 @@ export default function CallCenter() {
     const q = search.toLowerCase();
     return contacts.filter(c => {
       const matchSearch = !q || c.Name.toLowerCase().includes(q) || c.Phone.includes(q);
-      const matchCity = !selectedCity || c.City === selectedCity;
-      const matchCounty = !selectedCounty || c.County === selectedCounty;
-      return matchSearch && matchCity && matchCounty;
+      const matchMun = !selectedMun || c.Municipality === selectedMun;
+      return matchSearch && matchMun;
     });
-  }, [contacts, search, selectedCity, selectedCounty]);
+  }, [contacts, search, selectedMun]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -447,19 +403,11 @@ export default function CallCenter() {
         />
       </View>
 
-      {/* Filters */}
+      {/* Municipality Filter */}
       <View style={styles.filterRow}>
-        <TouchableOpacity style={styles.filterPicker} onPress={() => setCityPickerOpen(true)}>
-          <Text style={[styles.filterPickerText, !selectedCity && styles.filterPlaceholder]} numberOfLines={1}>
-            {selectedCity || 'Tüm İller'}
-          </Text>
-          <Text style={styles.filterChevron}>▾</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterPicker, !selectedCity && styles.filterPickerDisabled]}
-          onPress={() => selectedCity && setCountyPickerOpen(true)}>
-          <Text style={[styles.filterPickerText, !selectedCounty && styles.filterPlaceholder]} numberOfLines={1}>
-            {selectedCounty || 'Tüm İlçeler'}
+        <TouchableOpacity style={styles.filterPicker} onPress={() => setMunPickerOpen(true)}>
+          <Text style={[styles.filterPickerText, !selectedMun && styles.filterPlaceholder]} numberOfLines={1}>
+            {selectedMun || 'Tüm Belediyeler'}
           </Text>
           <Text style={styles.filterChevron}>▾</Text>
         </TouchableOpacity>
@@ -490,22 +438,15 @@ export default function CallCenter() {
         />
       )}
 
-      {/* City / county pickers */}
+      {/* Municipality picker */}
       <PickerModal
-        visible={cityPickerOpen}
-        title="İl Seçin"
-        options={cities}
-        selected={selectedCity}
-        onSelect={v => { setSelectedCity(v); setSelectedCounty(''); }}
-        onClose={() => setCityPickerOpen(false)}
-      />
-      <PickerModal
-        visible={countyPickerOpen}
-        title="İlçe Seçin"
-        options={counties}
-        selected={selectedCounty}
-        onSelect={setSelectedCounty}
-        onClose={() => setCountyPickerOpen(false)}
+        visible={munPickerOpen}
+        title="Belediye Seçin"
+        options={municipalities}
+        selected={selectedMun}
+        allLabel="Tüm Belediyeler"
+        onSelect={setSelectedMun}
+        onClose={() => setMunPickerOpen(false)}
       />
 
       {/* Add contact modal */}
@@ -542,7 +483,6 @@ const styles = StyleSheet.create({
 
   filterRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 10, gap: 8 },
   filterPicker: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', paddingHorizontal: 10, paddingVertical: 8 },
-  filterPickerDisabled: { opacity: 0.45 },
   filterPickerText: { flex: 1, fontSize: 13, color: '#1a1a1a' },
   filterPlaceholder: { color: '#999' },
   filterChevron: { fontSize: 11, color: '#999', marginLeft: 4 },
@@ -562,16 +502,13 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 11, color: '#888', marginTop: 2 },
   cardActions: { flexDirection: 'row', gap: 6 },
   actionBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#EAF3DE', alignItems: 'center', justifyContent: 'center' },
-  actionBtnBlue: { backgroundColor: '#E6F1FB' },
   actionIconPhone: { fontSize: 14, color: '#3B6D11' },
-  actionIconEmail: { fontSize: 13, color: '#185FA5' },
 
   cardDetail: { marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: '#E0E0E0' },
   detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
   detailLabel: { fontSize: 11, color: '#999', width: 64 },
   detailValue: { fontSize: 13, color: '#1a1a1a', flex: 1 },
   detailBold: { fontWeight: '600' },
-  detailLink: { color: '#185FA5' },
   caseBadge: { backgroundColor: '#FAECE7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20 },
   caseBadgeText: { fontSize: 11, color: '#993C1D' },
   newCaseBtn: { backgroundColor: '#4A55A2', borderRadius: 10, padding: 10, alignItems: 'center', marginTop: 10 },
@@ -590,11 +527,6 @@ const styles = StyleSheet.create({
   checkmark: { color: '#4A55A2', fontSize: 16, fontWeight: '700' },
 
   input: { backgroundColor: '#F5F5F7', borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', padding: 10, fontSize: 14, color: '#1a1a1a', marginBottom: 8 },
-  pickerButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F7', borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', padding: 10, marginBottom: 8 },
-  pickerButtonText: { flex: 1, fontSize: 14, color: '#1a1a1a' },
-  pickerPlaceholder: { color: '#999' },
-  pickerChevron: { fontSize: 11, color: '#999' },
-  pickerDisabled: { opacity: 0.45 },
   addModalActions: { flexDirection: 'row', gap: 10, marginTop: 12, marginBottom: 8 },
   cancelButton: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', alignItems: 'center' },
   cancelButtonText: { fontSize: 14, color: '#666' },
