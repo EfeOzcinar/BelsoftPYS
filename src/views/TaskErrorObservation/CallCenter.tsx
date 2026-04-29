@@ -16,8 +16,17 @@ import {
   Platform,
   SafeAreaView,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import blsCore from '../../core';
 import { Contact, CreateContactRequest, Case } from '../../core/Services/CallCenterService/interfaces';
+
+const CALL_HISTORY_KEY = 'callcenter_call_history';
+const MAX_HISTORY_PER_CONTACT = 5;
+
+interface CallRecord {
+  contactId: number;
+  calledAt: string; // ISO string
+}
 
 // ─── Avatar colors ────────────────────────────────────────────────────────────
 
@@ -36,6 +45,12 @@ function getInitials(name: string): string {
 
 function getAvatarColor(id: number) {
   return AVATAR_COLORS[id % AVATAR_COLORS.length];
+}
+
+function formatCallDate(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 // ─── Picker modal ─────────────────────────────────────────────────────────────
@@ -153,34 +168,27 @@ interface AddContactModalProps {
   visible: boolean;
   onClose: () => void;
   onSave: (contact: CreateContactRequest) => Promise<void>;
+  municipalities: string[];
 }
 
-function AddContactModal({ visible, onClose, onSave }: AddContactModalProps) {
+function AddContactModal({ visible, onClose, onSave, municipalities }: AddContactModalProps) {
   const [name, setName] = useState('');
   const [municipality, setMunicipality] = useState('');
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
+  const [munPickerOpen, setMunPickerOpen] = useState(false);
 
   function reset() {
-    setName('');
-    setMunicipality('');
-    setPhone('');
+    setName(''); setMunicipality(''); setPhone('');
   }
 
   async function handleSave() {
-    if (!name.trim() || !municipality.trim() || !phone.trim()) {
+    if (!name.trim() || !municipality || !phone.trim()) {
       Alert.alert('Eksik Alan', 'Lütfen tüm alanları doldurun.');
       return;
     }
     setSaving(true);
-    await onSave({
-      Name: name.trim(),
-      City: '',
-      County: '',
-      Municipality: municipality.trim(),
-      Phone: phone.trim(),
-      Email: '',
-    });
+    await onSave({ Name: name.trim(), City: '', County: '', Municipality: municipality, Phone: phone.trim(), Email: '' });
     setSaving(false);
     reset();
     onClose();
@@ -194,28 +202,17 @@ function AddContactModal({ visible, onClose, onSave }: AddContactModalProps) {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Yeni Kişi Ekle</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <TextInput
-                style={styles.input}
-                placeholder="Ad Soyad"
-                placeholderTextColor="#999"
-                value={name}
-                onChangeText={setName}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Belediye"
-                placeholderTextColor="#999"
-                value={municipality}
-                onChangeText={setMunicipality}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Cep Telefonu"
-                placeholderTextColor="#999"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
+              <TextInput style={styles.input} placeholder="Ad Soyad" placeholderTextColor="#999" value={name} onChangeText={setName} />
+
+              <TouchableOpacity style={styles.pickerButton} onPress={() => setMunPickerOpen(true)}>
+                <Text style={[styles.pickerButtonText, !municipality && styles.pickerPlaceholder]}>
+                  {municipality || 'Belediye seçin'}
+                </Text>
+                <Text style={styles.pickerChevron}>▾</Text>
+              </TouchableOpacity>
+
+              <TextInput style={styles.input} placeholder="Cep Telefonu" placeholderTextColor="#999" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+
               <View style={styles.addModalActions}>
                 <TouchableOpacity style={styles.cancelButton} onPress={() => { reset(); onClose(); }}>
                   <Text style={styles.cancelButtonText}>İptal</Text>
@@ -230,6 +227,16 @@ function AddContactModal({ visible, onClose, onSave }: AddContactModalProps) {
           </TouchableOpacity>
         </TouchableOpacity>
       </KeyboardAvoidingView>
+
+      <PickerModal
+        visible={munPickerOpen}
+        title="Belediye Seçin"
+        options={municipalities}
+        selected={municipality}
+        allLabel="Belediye seçin"
+        onSelect={setMunicipality}
+        onClose={() => setMunPickerOpen(false)}
+      />
     </Modal>
   );
 }
@@ -240,18 +247,19 @@ interface ContactCardProps {
   contact: Contact;
   expanded: boolean;
   cases: Case[];
+  callHistory: CallRecord[];
   onToggle: () => void;
   onNewCase: (contact: Contact) => void;
+  onCall: (contact: Contact) => void;
 }
 
-function ContactCard({ contact, expanded, cases, onToggle, onNewCase }: ContactCardProps) {
+function ContactCard({ contact, expanded, cases, callHistory, onToggle, onNewCase, onCall }: ContactCardProps) {
   const col = getAvatarColor(contact.Id);
   const openCases = cases.filter(c => c.Status !== 'resolved');
-
-  function handleCall() {
-    Linking.openURL('tel:' + contact.Phone.replace(/\s/g, '')).catch(() =>
-      Alert.alert('Hata', 'Telefon uygulaması açılamadı.'));
-  }
+  const contactCalls = callHistory
+    .filter(r => r.contactId === contact.Id)
+    .sort((a, b) => new Date(b.calledAt).getTime() - new Date(a.calledAt).getTime())
+    .slice(0, MAX_HISTORY_PER_CONTACT);
 
   return (
     <TouchableOpacity
@@ -267,7 +275,7 @@ function ContactCard({ contact, expanded, cases, onToggle, onNewCase }: ContactC
           <Text style={styles.cardSub} numberOfLines={1}>{contact.Municipality}</Text>
         </View>
         <View style={styles.cardActions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={handleCall}>
+          <TouchableOpacity style={styles.actionBtn} onPress={() => onCall(contact)}>
             <Text style={styles.actionIconPhone}>✆</Text>
           </TouchableOpacity>
         </View>
@@ -276,13 +284,10 @@ function ContactCard({ contact, expanded, cases, onToggle, onNewCase }: ContactC
       {expanded && (
         <View style={styles.cardDetail}>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Belediye</Text>
-            <Text style={styles.detailValue}>{contact.Municipality}</Text>
-          </View>
-          <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Telefon</Text>
             <Text style={[styles.detailValue, styles.detailBold]}>{contact.Phone}</Text>
           </View>
+
           {openCases.length > 0 && (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Açık Vaka</Text>
@@ -291,6 +296,22 @@ function ContactCard({ contact, expanded, cases, onToggle, onNewCase }: ContactC
               </View>
             </View>
           )}
+
+          {/* Call history */}
+          <View style={styles.callHistorySection}>
+            <Text style={styles.callHistoryTitle}>Arama Geçmişi</Text>
+            {contactCalls.length === 0 ? (
+              <Text style={styles.callHistoryEmpty}>Henüz arama yapılmadı</Text>
+            ) : (
+              contactCalls.map((record, i) => (
+                <View key={i} style={styles.callHistoryRow}>
+                  <Text style={styles.callHistoryIcon}>📞</Text>
+                  <Text style={styles.callHistoryDate}>{formatCallDate(record.calledAt)}</Text>
+                </View>
+              ))
+            )}
+          </View>
+
           <TouchableOpacity style={styles.newCaseBtn} onPress={() => onNewCase(contact)}>
             <Text style={styles.newCaseBtnText}>+ Yeni Vaka Aç</Text>
           </TouchableOpacity>
@@ -305,6 +326,7 @@ function ContactCard({ contact, expanded, cases, onToggle, onNewCase }: ContactC
 export default function CallCenter() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
+  const [callHistory, setCallHistory] = useState<CallRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedMun, setSelectedMun] = useState('');
@@ -314,12 +336,13 @@ export default function CallCenter() {
   const [munPickerOpen, setMunPickerOpen] = useState(false);
 
   const municipalities = useMemo(() =>
-    [...new Set(contacts.map(c => c.Municipality))].sort(),
+    [...new Set(contacts.map(c => c.Municipality))].filter(Boolean).sort(),
     [contacts]
   );
 
   useEffect(() => {
     loadContacts();
+    loadCallHistory();
   }, []);
 
   async function loadContacts() {
@@ -327,10 +350,38 @@ export default function CallCenter() {
       setLoading(true);
       const data = await blsCore.services.callCenterService.getContacts();
       setContacts(data);
-    } catch (err) {
+    } catch {
       Alert.alert('Hata', 'Kişiler yüklenemedi.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadCallHistory() {
+    try {
+      const raw = await AsyncStorage.getItem(CALL_HISTORY_KEY);
+      if (raw) setCallHistory(JSON.parse(raw));
+    } catch {
+      // silent
+    }
+  }
+
+  async function saveCallRecord(contact: Contact) {
+    try {
+      Linking.openURL('tel:' + contact.Phone.replace(/\s/g, '')).catch(() =>
+        Alert.alert('Hata', 'Telefon uygulaması açılamadı.')
+      );
+
+      const newRecord: CallRecord = {
+        contactId: contact.Id,
+        calledAt: new Date().toISOString(),
+      };
+
+      const updated = [newRecord, ...callHistory].slice(0, 500);
+      setCallHistory(updated);
+      await AsyncStorage.setItem(CALL_HISTORY_KEY, JSON.stringify(updated));
+    } catch {
+      // silent
     }
   }
 
@@ -339,7 +390,7 @@ export default function CallCenter() {
       const data = await blsCore.services.callCenterService.getCasesByContact(contactId);
       setCases(prev => [...prev.filter(c => c.ContactId !== contactId), ...data]);
     } catch {
-      // silent — cases are supplementary info
+      // silent
     }
   }
 
@@ -403,7 +454,7 @@ export default function CallCenter() {
         />
       </View>
 
-      {/* Municipality Filter */}
+      {/* Municipality filter */}
       <View style={styles.filterRow}>
         <TouchableOpacity style={styles.filterPicker} onPress={() => setMunPickerOpen(true)}>
           <Text style={[styles.filterPickerText, !selectedMun && styles.filterPlaceholder]} numberOfLines={1}>
@@ -431,8 +482,10 @@ export default function CallCenter() {
               contact={item}
               expanded={expandedId === item.Id}
               cases={cases.filter(c => c.ContactId === item.Id)}
+              callHistory={callHistory}
               onToggle={() => handleToggleExpand(item.Id)}
               onNewCase={contact => setNewCaseContact(contact)}
+              onCall={saveCallRecord}
             />
           )}
         />
@@ -444,7 +497,6 @@ export default function CallCenter() {
         title="Belediye Seçin"
         options={municipalities}
         selected={selectedMun}
-        allLabel="Tüm Belediyeler"
         onSelect={setSelectedMun}
         onClose={() => setMunPickerOpen(false)}
       />
@@ -454,6 +506,7 @@ export default function CallCenter() {
         visible={addContactOpen}
         onClose={() => setAddContactOpen(false)}
         onSave={handleAddContact}
+        municipalities={municipalities}
       />
 
       {/* New case modal */}
@@ -481,7 +534,7 @@ const styles = StyleSheet.create({
   searchIcon: { fontSize: 18, color: '#999', marginRight: 6 },
   searchInput: { flex: 1, paddingVertical: 9, fontSize: 14, color: '#1a1a1a' },
 
-  filterRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 10, gap: 8 },
+  filterRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 10 },
   filterPicker: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', paddingHorizontal: 10, paddingVertical: 8 },
   filterPickerText: { flex: 1, fontSize: 13, color: '#1a1a1a' },
   filterPlaceholder: { color: '#999' },
@@ -500,7 +553,7 @@ const styles = StyleSheet.create({
   cardInfo: { flex: 1, marginRight: 8 },
   cardName: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
   cardSub: { fontSize: 11, color: '#888', marginTop: 2 },
-  cardActions: { flexDirection: 'row', gap: 6 },
+  cardActions: { flexDirection: 'row' },
   actionBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#EAF3DE', alignItems: 'center', justifyContent: 'center' },
   actionIconPhone: { fontSize: 14, color: '#3B6D11' },
 
@@ -511,6 +564,14 @@ const styles = StyleSheet.create({
   detailBold: { fontWeight: '600' },
   caseBadge: { backgroundColor: '#FAECE7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20 },
   caseBadgeText: { fontSize: 11, color: '#993C1D' },
+
+  callHistorySection: { marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: '#F0F0F0' },
+  callHistoryTitle: { fontSize: 11, color: '#999', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 },
+  callHistoryEmpty: { fontSize: 12, color: '#bbb', fontStyle: 'italic' },
+  callHistoryRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  callHistoryIcon: { fontSize: 12, marginRight: 6 },
+  callHistoryDate: { fontSize: 12, color: '#555' },
+
   newCaseBtn: { backgroundColor: '#4A55A2', borderRadius: 10, padding: 10, alignItems: 'center', marginTop: 10 },
   newCaseBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 
@@ -527,6 +588,10 @@ const styles = StyleSheet.create({
   checkmark: { color: '#4A55A2', fontSize: 16, fontWeight: '700' },
 
   input: { backgroundColor: '#F5F5F7', borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', padding: 10, fontSize: 14, color: '#1a1a1a', marginBottom: 8 },
+  pickerButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F7', borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', padding: 10, marginBottom: 8 },
+  pickerButtonText: { flex: 1, fontSize: 14, color: '#1a1a1a' },
+  pickerPlaceholder: { color: '#999' },
+  pickerChevron: { fontSize: 11, color: '#999' },
   addModalActions: { flexDirection: 'row', gap: 10, marginTop: 12, marginBottom: 8 },
   cancelButton: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', alignItems: 'center' },
   cancelButtonText: { fontSize: 14, color: '#666' },
