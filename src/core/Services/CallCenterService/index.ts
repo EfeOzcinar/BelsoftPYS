@@ -1,5 +1,13 @@
 /* eslint-disable prettier/prettier */
-import { Contact, CreateContactRequest, Case, CreateCaseRequest, UpdateCaseStatusRequest } from './interfaces';
+import {
+  Contact,
+  CreateContactRequest,
+  Case,
+  CreateCaseRequest,
+  UpdateCaseStatusRequest,
+  CallLog,
+  CreateCallLogRequest
+} from './interfaces';
 
 const HARDCODED_CONTACTS: Contact[] = [
   { Id: 1, Name: 'ÖMER', Municipality: 'ADANA SULAMA', City: '', County: '', Phone: '536 699 9057', Email: '' },
@@ -329,34 +337,71 @@ const HARDCODED_CONTACTS: Contact[] = [
 
 let localCases: Case[] = [];
 let caseIdCounter = 1;
+let localCallLogs: CallLog[] = [];
+let callLogIdCounter = 1;
 
 export default class CallCenterService {
+  private getNextContactId(): number {
+    if (HARDCODED_CONTACTS.length === 0) {
+      return 1;
+    }
+
+    const maxId = HARDCODED_CONTACTS.reduce((max, contact) => (
+      contact.Id > max ? contact.Id : max
+    ), 0);
+
+    return maxId + 1;
+  }
+
+  private getNextCaseId(): number {
+    const next = caseIdCounter;
+    caseIdCounter += 1;
+    return next;
+  }
+
+  private findContactById(contactId: number): Contact | undefined {
+    return HARDCODED_CONTACTS.find(contact => contact.Id === contactId);
+  }
+
+  private getNextCallLogId(): number {
+    const next = callLogIdCounter;
+    callLogIdCounter += 1;
+    return next;
+  }
+
   async getContacts(): Promise<Contact[]> {
     return Promise.resolve([...HARDCODED_CONTACTS]);
   }
 
-  async createContact(_data: CreateContactRequest): Promise<Contact> {
+  async createContact(data: CreateContactRequest): Promise<Contact> {
     const newContact: Contact = {
-      Id: HARDCODED_CONTACTS.length + 1,
-      Name: _data.Name,
-      City: _data.City,
-      County: _data.County,
-      Municipality: _data.Municipality,
-      Phone: _data.Phone,
-      Email: _data.Email,
+      Id: this.getNextContactId(),
+      Name: data.Name,
+      City: data.City,
+      County: data.County,
+      Municipality: data.Municipality,
+      Phone: data.Phone,
+      Email: data.Email,
     };
+
     HARDCODED_CONTACTS.push(newContact);
     return Promise.resolve(newContact);
   }
 
-  async deleteContact(_contactId: number): Promise<void> {
-    const idx = HARDCODED_CONTACTS.findIndex(c => c.Id === _contactId);
-    if (idx !== -1) HARDCODED_CONTACTS.splice(idx, 1);
+  async deleteContact(contactId: number): Promise<void> {
+    const idx = HARDCODED_CONTACTS.findIndex(contact => contact.Id === contactId);
+
+    if (idx !== -1) {
+      HARDCODED_CONTACTS.splice(idx, 1);
+      localCases = localCases.filter(currentCase => currentCase.ContactId !== contactId);
+      localCallLogs = localCallLogs.filter(callLog => callLog.ContactId !== contactId);
+    }
+
     return Promise.resolve();
   }
 
   async getCasesByContact(contactId: number): Promise<Case[]> {
-    return Promise.resolve(localCases.filter(c => c.ContactId === contactId));
+    return Promise.resolve(localCases.filter(currentCase => currentCase.ContactId === contactId));
   }
 
   async getAllCases(): Promise<Case[]> {
@@ -364,9 +409,9 @@ export default class CallCenterService {
   }
 
   async createCase(data: CreateCaseRequest): Promise<Case> {
-    const contact = HARDCODED_CONTACTS.find(c => c.Id === data.ContactId);
+    const contact = this.findContactById(data.ContactId);
     const newCase: Case = {
-      Id: caseIdCounter++,
+      Id: this.getNextCaseId(),
       ContactId: data.ContactId,
       ContactName: contact?.Name ?? '',
       Municipality: contact?.Municipality ?? '',
@@ -379,10 +424,50 @@ export default class CallCenterService {
   }
 
   async updateCaseStatus(data: UpdateCaseStatusRequest): Promise<Case> {
-    const c = localCases.find(c => c.Id === data.CaseId);
-    if (!c) throw new Error('Case not found');
-    c.Status = data.Status;
-    if (data.Status === 'resolved') c.ResolvedAt = new Date().toISOString();
-    return Promise.resolve({ ...c });
+    const targetCase = localCases.find(currentCase => currentCase.Id === data.CaseId);
+
+    if (!targetCase) {
+      throw new Error('Case not found');
+    }
+
+    targetCase.Status = data.Status;
+
+    if (data.Status === 'resolved') {
+      targetCase.ResolvedAt = new Date().toISOString();
+    } else {
+      delete targetCase.ResolvedAt;
+    }
+
+    return Promise.resolve({ ...targetCase });
+  }
+
+  async getCallLogsByContact(contactId: number): Promise<CallLog[]> {
+    const contactLogs = localCallLogs
+      .filter(callLog => callLog.ContactId === contactId)
+      .sort((a, b) => b.CreatedAt.localeCompare(a.CreatedAt));
+
+    return Promise.resolve([...contactLogs]);
+  }
+
+  async createCallLog(data: CreateCallLogRequest): Promise<CallLog> {
+    const contact = this.findContactById(data.ContactId);
+
+    if (!contact) {
+      throw new Error('Contact not found');
+    }
+
+    const newLog: CallLog = {
+      Id: this.getNextCallLogId(),
+      ContactId: data.ContactId,
+      ContactName: contact.Name,
+      Municipality: contact.Municipality,
+      Direction: data.Direction,
+      DurationSeconds: data.DurationSeconds,
+      Summary: data.Summary,
+      CreatedAt: new Date().toISOString(),
+    };
+
+    localCallLogs.push(newLog);
+    return Promise.resolve({ ...newLog });
   }
 }

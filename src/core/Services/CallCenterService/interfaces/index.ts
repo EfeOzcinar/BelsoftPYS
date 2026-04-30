@@ -39,4 +39,22 @@ export interface Contact {
     CaseId: number;
     Status: 'open' | 'in_progress' | 'resolved';
   }
+
+export interface CallLog {
+  Id: number;
+  ContactId: number;
+  ContactName: string;
+  Municipality: string;
+  Direction: 'incoming' | 'outgoing';
+  DurationSeconds: number;
+  Summary: string;
+  CreatedAt: string;
+}
+
+export interface CreateCallLogRequest {
+  ContactId: number;
+  Direction: 'incoming' | 'outgoing';
+  DurationSeconds: number;
+  Summary: string;
+}
   

@@ -18,7 +18,12 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import blsCore from '../../core';
-import { Contact, CreateContactRequest, Case } from '../../core/Services/CallCenterService/interfaces';
+import {
+  Contact,
+  CreateContactRequest,
+  Case,
+  CallLog
+} from '../../core/Services/CallCenterService/interfaces';
 
 const CALL_HISTORY_KEY = 'callcenter_call_history';
 const MAX_HISTORY_PER_CONTACT = 5;
@@ -39,6 +44,18 @@ const AVATAR_COLORS = [
   { bg: '#FAECE7', text: '#993C1D' },
 ];
 
+const THEME = {
+  primary: '#4A55A2',
+  primarySoft: '#EEF0FF',
+  primaryBorder: '#D9DDFB',
+  surface: '#FFFFFF',
+  background: '#F6F7FB',
+  success: '#2F855A',
+  successSoft: '#E8F5EE',
+  text: '#1A1A1A',
+  muted: '#8083A0',
+};
+
 function getInitials(name: string): string {
   return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
 }
@@ -51,6 +68,28 @@ function formatCallDate(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString('tr-TR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatDuration(seconds: number): string {
+  const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const mins = Math.floor(safeSeconds / 60);
+  const rem = safeSeconds % 60;
+
+  if (mins === 0) {
+    return `${rem} sn`;
+  }
+
+  return `${mins} dk ${rem} sn`;
 }
 
 // ─── Picker modal ─────────────────────────────────────────────────────────────
@@ -162,6 +201,108 @@ function NewCaseModal({ visible, contact, onClose, onSave }: NewCaseModalProps) 
   );
 }
 
+interface NewCallLogModalProps {
+  visible: boolean;
+  contact: Contact | null;
+  onClose: () => void;
+  onSave: (contactId: number, direction: 'incoming' | 'outgoing', durationSeconds: number, summary: string) => Promise<void>;
+}
+
+function NewCallLogModal({ visible, contact, onClose, onSave }: NewCallLogModalProps) {
+  const [direction, setDirection] = useState<'incoming' | 'outgoing'>('outgoing');
+  const [duration, setDuration] = useState('');
+  const [summary, setSummary] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function reset() {
+    setDirection('outgoing');
+    setDuration('');
+    setSummary('');
+  }
+
+  async function handleSave() {
+    if (!contact || !summary.trim()) {
+      Alert.alert('Eksik Alan', 'Lutfen gorusme ozetini girin.');
+      return;
+    }
+
+    const parsedDuration = Number(duration);
+    if (!Number.isFinite(parsedDuration) || parsedDuration < 0) {
+      Alert.alert('Hata', 'Sure alani sayisal olmalidir.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await onSave(contact.Id, direction, Math.floor(parsedDuration), summary.trim());
+      reset();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+          <TouchableOpacity activeOpacity={1} style={styles.addSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Arama Kaydi Ekle</Text>
+            {contact && (
+              <Text style={styles.caseContactName}>{contact.Name} - {contact.Municipality}</Text>
+            )}
+
+            <View style={styles.callDirectionRow}>
+              <TouchableOpacity
+                style={[styles.directionBtn, direction === 'incoming' && styles.directionBtnActive]}
+                onPress={() => setDirection('incoming')}>
+                <Text style={[styles.directionBtnText, direction === 'incoming' && styles.directionBtnTextActive]}>
+                  Gelen
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.directionBtn, direction === 'outgoing' && styles.directionBtnActive]}
+                onPress={() => setDirection('outgoing')}>
+                <Text style={[styles.directionBtnText, direction === 'outgoing' && styles.directionBtnTextActive]}>
+                  Giden
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Sure (saniye)"
+              placeholderTextColor="#999"
+              value={duration}
+              onChangeText={setDuration}
+              keyboardType="number-pad"
+            />
+
+            <TextInput
+              style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+              placeholder="Gorusme ozeti..."
+              placeholderTextColor="#999"
+              value={summary}
+              onChangeText={setSummary}
+              multiline
+            />
+
+            <View style={styles.addModalActions}>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => { reset(); onClose(); }}>
+                <Text style={styles.cancelButtonText}>Iptal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
+                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveButtonText}>Kaydet</Text>}
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ─── Add contact modal ────────────────────────────────────────────────────────
 
 interface AddContactModalProps {
@@ -248,12 +389,14 @@ interface ContactCardProps {
   expanded: boolean;
   cases: Case[];
   callHistory: CallRecord[];
+  callLogs: CallLog[];
   onToggle: () => void;
   onNewCase: (contact: Contact) => void;
   onCall: (contact: Contact) => void;
+  onNewCallLog: (contact: Contact) => void;
 }
 
-function ContactCard({ contact, expanded, cases, callHistory, onToggle, onNewCase, onCall }: ContactCardProps) {
+function ContactCard({ contact, expanded, cases, callHistory, callLogs, onToggle, onNewCase, onCall, onNewCallLog }: ContactCardProps) {
   const col = getAvatarColor(contact.Id);
   const openCases = cases.filter(c => c.Status !== 'resolved');
   const contactCalls = callHistory
@@ -315,6 +458,25 @@ function ContactCard({ contact, expanded, cases, callHistory, onToggle, onNewCas
           <TouchableOpacity style={styles.newCaseBtn} onPress={() => onNewCase(contact)}>
             <Text style={styles.newCaseBtnText}>+ Yeni Vaka Aç</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.newLogBtn} onPress={() => onNewCallLog(contact)}>
+            <Text style={styles.newLogBtnText}>+ Arama Kaydi Ekle</Text>
+          </TouchableOpacity>
+
+          <View style={styles.callLogsSection}>
+            <Text style={styles.callLogsTitle}>Son Arama Kayitlari</Text>
+            {callLogs.length === 0 ? (
+              <Text style={styles.noLogText}>Henuz arama kaydi yok</Text>
+            ) : (
+              callLogs.slice(0, 3).map(log => (
+                <View key={log.Id} style={styles.logItem}>
+                  <Text style={styles.logMeta}>
+                    {log.Direction === 'incoming' ? 'Gelen' : 'Giden'} - {formatDuration(log.DurationSeconds)} - {formatDateTime(log.CreatedAt)}
+                  </Text>
+                  <Text style={styles.logSummary}>{log.Summary}</Text>
+                </View>
+              ))
+            )}
+          </View>
         </View>
       )}
     </TouchableOpacity>
@@ -327,12 +489,14 @@ export default function CallCenter() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [cases, setCases] = useState<Case[]>([]);
   const [callHistory, setCallHistory] = useState<CallRecord[]>([]);
+  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedMun, setSelectedMun] = useState('');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [newCaseContact, setNewCaseContact] = useState<Contact | null>(null);
+  const [newCallLogContact, setNewCallLogContact] = useState<Contact | null>(null);
   const [munPickerOpen, setMunPickerOpen] = useState(false);
 
   const municipalities = useMemo(() =>
@@ -394,12 +558,22 @@ export default function CallCenter() {
     }
   }
 
+  async function loadCallLogsForContact(contactId: number) {
+    try {
+      const data = await blsCore.services.callCenterService.getCallLogsByContact(contactId);
+      setCallLogs(prev => [...prev.filter(log => log.ContactId !== contactId), ...data]);
+    } catch {
+      // silent
+    }
+  }
+
   function handleToggleExpand(id: number) {
     if (expandedId === id) {
       setExpandedId(null);
     } else {
       setExpandedId(id);
       loadCasesForContact(id);
+      loadCallLogsForContact(id);
     }
   }
 
@@ -419,6 +593,26 @@ export default function CallCenter() {
       Alert.alert('Başarılı', 'Vaka açıldı.');
     } catch {
       Alert.alert('Hata', 'Vaka açılamadı.');
+    }
+  }
+
+  async function handleCreateCallLog(
+    contactId: number,
+    direction: 'incoming' | 'outgoing',
+    durationSeconds: number,
+    summary: string
+  ) {
+    try {
+      await blsCore.services.callCenterService.createCallLog({
+        ContactId: contactId,
+        Direction: direction,
+        DurationSeconds: durationSeconds,
+        Summary: summary
+      });
+      await loadCallLogsForContact(contactId);
+      Alert.alert('Basarili', 'Arama kaydi eklendi.');
+    } catch {
+      Alert.alert('Hata', 'Arama kaydi eklenemedi.');
     }
   }
 
@@ -469,7 +663,7 @@ export default function CallCenter() {
 
       {/* List */}
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color="#4A55A2" />
+        <ActivityIndicator style={{ marginTop: 40 }} color={THEME.primary} />
       ) : (
         <FlatList
           data={filtered}
@@ -483,9 +677,11 @@ export default function CallCenter() {
               expanded={expandedId === item.Id}
               cases={cases.filter(c => c.ContactId === item.Id)}
               callHistory={callHistory}
+              callLogs={callLogs.filter(log => log.ContactId === item.Id)}
               onToggle={() => handleToggleExpand(item.Id)}
               onNewCase={contact => setNewCaseContact(contact)}
               onCall={saveCallRecord}
+              onNewCallLog={contact => setNewCallLogContact(contact)}
             />
           )}
         />
@@ -516,6 +712,13 @@ export default function CallCenter() {
         onClose={() => setNewCaseContact(null)}
         onSave={handleCreateCase}
       />
+
+      <NewCallLogModal
+        visible={newCallLogContact !== null}
+        contact={newCallLogContact}
+        onClose={() => setNewCallLogContact(null)}
+        onSave={handleCreateCallLog}
+      />
     </SafeAreaView>
   );
 }
@@ -523,57 +726,70 @@ export default function CallCenter() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F5F5F7' },
+  safe: { flex: 1, backgroundColor: THEME.background },
 
-  header: { backgroundColor: '#4A55A2', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
+  header: { backgroundColor: THEME.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  addIconBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  addIconBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
   addIconText: { color: '#fff', fontSize: 22, lineHeight: 26 },
 
-  searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: 16, marginTop: 12, borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', paddingHorizontal: 12 },
-  searchIcon: { fontSize: 18, color: '#999', marginRight: 6 },
-  searchInput: { flex: 1, paddingVertical: 9, fontSize: 14, color: '#1a1a1a' },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.surface, marginHorizontal: 16, marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E7E9F5', paddingHorizontal: 12 },
+  searchIcon: { fontSize: 18, color: THEME.muted, marginRight: 6 },
+  searchInput: { flex: 1, paddingVertical: 9, fontSize: 14, color: THEME.text },
 
-  filterRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 10 },
-  filterPicker: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, borderWidth: 0.5, borderColor: '#E0E0E0', paddingHorizontal: 10, paddingVertical: 8 },
-  filterPickerText: { flex: 1, fontSize: 13, color: '#1a1a1a' },
+  filterRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: 10, gap: 8 },
+  filterPicker: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.surface, borderRadius: 12, borderWidth: 1, borderColor: '#E7E9F5', paddingHorizontal: 10, paddingVertical: 8 },
+  filterPickerText: { flex: 1, fontSize: 13, color: THEME.text },
   filterPlaceholder: { color: '#999' },
-  filterChevron: { fontSize: 11, color: '#999', marginLeft: 4 },
+  filterChevron: { fontSize: 11, color: THEME.muted, marginLeft: 4 },
 
-  resultCount: { marginHorizontal: 16, marginTop: 10, marginBottom: 4, fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: '500' },
+  resultCount: { marginHorizontal: 16, marginTop: 10, marginBottom: 4, fontSize: 11, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: '500' },
 
   list: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 },
   emptyText: { textAlign: 'center', color: '#999', fontSize: 14, marginTop: 40 },
 
-  card: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 0.5, borderColor: '#E0E0E0', padding: 12 },
-  cardExpanded: { borderColor: '#4A55A2' },
+  card: { backgroundColor: THEME.surface, borderRadius: 14, borderWidth: 1, borderColor: '#E6E8F3', padding: 12 },
+  cardExpanded: { borderColor: THEME.primaryBorder, backgroundColor: '#FBFBFF' },
   cardRow: { flexDirection: 'row', alignItems: 'center' },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   avatarText: { fontSize: 13, fontWeight: '600' },
   cardInfo: { flex: 1, marginRight: 8 },
-  cardName: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
-  cardSub: { fontSize: 11, color: '#888', marginTop: 2 },
-  cardActions: { flexDirection: 'row' },
-  actionBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#EAF3DE', alignItems: 'center', justifyContent: 'center' },
-  actionIconPhone: { fontSize: 14, color: '#3B6D11' },
+  cardName: { fontSize: 14, fontWeight: '600', color: THEME.text },
+  cardSub: { fontSize: 11, color: THEME.muted, marginTop: 2 },
+  cardActions: { flexDirection: 'row', gap: 6 },
+  actionBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: THEME.successSoft, alignItems: 'center', justifyContent: 'center' },
+  actionIconPhone: { fontSize: 14, color: THEME.success },
 
   cardDetail: { marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: '#E0E0E0' },
   detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
-  detailLabel: { fontSize: 11, color: '#999', width: 64 },
-  detailValue: { fontSize: 13, color: '#1a1a1a', flex: 1 },
+  detailLabel: { fontSize: 11, color: THEME.muted, width: 64 },
+  detailValue: { fontSize: 13, color: THEME.text, flex: 1 },
   detailBold: { fontWeight: '600' },
-  caseBadge: { backgroundColor: '#FAECE7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20 },
-  caseBadgeText: { fontSize: 11, color: '#993C1D' },
+  caseBadge: { backgroundColor: THEME.primarySoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20 },
+  caseBadgeText: { fontSize: 11, color: THEME.primary },
 
   callHistorySection: { marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: '#F0F0F0' },
-  callHistoryTitle: { fontSize: 11, color: '#999', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 },
-  callHistoryEmpty: { fontSize: 12, color: '#bbb', fontStyle: 'italic' },
+  callHistoryTitle: { fontSize: 11, color: THEME.muted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 },
+  callHistoryEmpty: { fontSize: 12, color: '#9AA0BC', fontStyle: 'italic' },
   callHistoryRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   callHistoryIcon: { fontSize: 12, marginRight: 6 },
-  callHistoryDate: { fontSize: 12, color: '#555' },
+  callHistoryDate: { fontSize: 12, color: '#636A93' },
 
-  newCaseBtn: { backgroundColor: '#4A55A2', borderRadius: 10, padding: 10, alignItems: 'center', marginTop: 10 },
+  newCaseBtn: { backgroundColor: THEME.primary, borderRadius: 10, padding: 10, alignItems: 'center', marginTop: 10 },
   newCaseBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  newLogBtn: { backgroundColor: THEME.success, borderRadius: 10, padding: 10, alignItems: 'center', marginTop: 8 },
+  newLogBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  callLogsSection: { marginTop: 10, borderTopWidth: 0.5, borderTopColor: '#E0E0E0', paddingTop: 10 },
+  callLogsTitle: { fontSize: 12, fontWeight: '600', color: THEME.text, marginBottom: 6 },
+  noLogText: { fontSize: 12, color: '#888' },
+  logItem: { backgroundColor: '#F3F5FD', borderRadius: 8, padding: 8, marginBottom: 6 },
+  logMeta: { fontSize: 11, color: '#636A93', marginBottom: 3 },
+  logSummary: { fontSize: 12, color: THEME.text },
+  callDirectionRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  directionBtn: { flex: 1, borderWidth: 1, borderColor: '#D8DBEC', borderRadius: 10, paddingVertical: 10, alignItems: 'center', backgroundColor: '#fff' },
+  directionBtnActive: { backgroundColor: THEME.successSoft, borderColor: THEME.success },
+  directionBtnText: { fontSize: 13, color: '#444' },
+  directionBtnTextActive: { color: THEME.success, fontWeight: '600' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '70%' },
